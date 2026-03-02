@@ -35,6 +35,6 @@ public class FraudDetector {
             timestamps.subList(0, firstValidIndex).clear();
         }
 
-        return timestamps.size() > threshold;
+        return timestamps.size() >= threshold;
     }
 }

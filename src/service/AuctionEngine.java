@@ -4,18 +4,22 @@ import model.Bid;
 import structures.MaxHeap;
 import structures.PersistentBidTree;
 import structures.RedBlackTree;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 public class AuctionEngine {
 
     private static final int DEFAULT_RAPID_WINDOW_SECONDS = 20;
-    private static final int DEFAULT_RAPID_THRESHOLD = 5;
+    private static final int DEFAULT_RAPID_THRESHOLD = 3;
     private static final double PRICE_SPIKE_MULTIPLIER = 1.7;
+    private static final int MAX_RECENT_ALERTS = 50;
 
     private MaxHeap maxHeap;
     private RedBlackTree redBlackTree;
     private PersistentBidTree persistentBidTree;
     private FraudDetector fraudDetector;
+    private final List<String> recentAlerts;
     private int totalBids;
     private boolean auctionOpen;
 
@@ -24,6 +28,7 @@ public class AuctionEngine {
         redBlackTree = new RedBlackTree();
         persistentBidTree = new PersistentBidTree();
         fraudDetector = new FraudDetector();
+        recentAlerts = new ArrayList<>();
         totalBids = 0;
         auctionOpen = true;
     }
@@ -62,10 +67,14 @@ public class AuctionEngine {
         if (rapidBidding || priceSpike) {
             System.out.println("WARNING: Unusual bidding activity detected.");
             if (rapidBidding) {
-                System.out.println("WARNING: Unusual bidding activity detected (Rapid bidding by bidder: " + bidderId + ").");
+                String message = "Rapid bidding by bidder: " + bidderId + " at amount " + amount;
+                System.out.println("WARNING: Unusual bidding activity detected (" + message + ").");
+                addAlert(message);
             }
             if (priceSpike) {
-                System.out.println("WARNING: Unusual bidding activity detected (Price spike).");
+                String message = "Price spike at amount " + amount;
+                System.out.println("WARNING: Unusual bidding activity detected (" + message + ").");
+                addAlert(message);
             }
         }
     }
@@ -116,5 +125,16 @@ public class AuctionEngine {
 
     public boolean isValidHistoryVersion(int version) {
         return persistentBidTree.isValidVersion(version);
+    }
+
+    public List<String> getRecentAlerts() {
+        return Collections.unmodifiableList(recentAlerts);
+    }
+
+    private void addAlert(String message) {
+        if (recentAlerts.size() == MAX_RECENT_ALERTS) {
+            recentAlerts.remove(0);
+        }
+        recentAlerts.add(message);
     }
 }

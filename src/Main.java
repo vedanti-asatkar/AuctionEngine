@@ -4,9 +4,6 @@ import java.util.Scanner;
 
 public class Main {
 
-    private static final int DEFAULT_RAPID_WINDOW = 20;
-    private static final int DEFAULT_RAPID_THRESHOLD = 5;
-
     private static void clearScreen() {
         System.out.print("\n".repeat(30));
     }
@@ -33,18 +30,15 @@ public class Main {
                     pause(scanner);
                     break;
                 case 4:
-                    handleRapidCheck(engine, scanner);
+                    handleAlertsView(engine, scanner);
                     break;
                 case 5:
-                    handlePriceCheck(engine, scanner);
-                    break;
-                case 6:
                     handleCloseAuction(engine, scanner);
                     break;
-                case 7:
+                case 6:
                     handleHistorySnapshot(engine, scanner);
                     break;
-                case 8:
+                case 7:
                     System.out.println("Exiting...");
                     scanner.close();
                     return;
@@ -68,11 +62,10 @@ public class Main {
         System.out.println("1. Place Bid");
         System.out.println("2. Show Highest Bid");
         System.out.println("3. Show All Bids (Sorted)");
-        System.out.println("4. Check Rapid Bidding (Bidder)");
-        System.out.println("5. Check Price Spike (Amount)");
-        System.out.println("6. Close Auction");
-        System.out.println("7. Show Historical Snapshot");
-        System.out.println("8. Exit");
+        System.out.println("4. Show Recent Alerts");
+        System.out.println("5. Close Auction");
+        System.out.println("6. Show Historical Snapshot");
+        System.out.println("7. Exit");
         System.out.println("===================================");
     }
 
@@ -105,33 +98,15 @@ public class Main {
         }
     }
 
-    private static void handleRapidCheck(AuctionEngine engine, Scanner scanner) {
-        System.out.print("Bidder ID: ");
-        String bidderId = scanner.nextLine().trim();
-        while (bidderId.isEmpty()) {
-            System.out.print("Bidder ID cannot be empty. Enter Bidder ID: ");
-            bidderId = scanner.nextLine().trim();
+    private static void handleAlertsView(AuctionEngine engine, Scanner scanner) {
+        System.out.println("\nRecent fraud alerts:");
+        if (engine.getRecentAlerts().isEmpty()) {
+            System.out.println("No alerts yet.");
+        } else {
+            for (String alert : engine.getRecentAlerts()) {
+                System.out.println(alert);
+            }
         }
-
-        int windowSeconds = readInt(scanner, "Window seconds (default 20): ");
-        if (windowSeconds <= 0) {
-            windowSeconds = DEFAULT_RAPID_WINDOW;
-        }
-
-        int threshold = readInt(scanner, "Threshold (default 5): ");
-        if (threshold < 0) {
-            threshold = DEFAULT_RAPID_THRESHOLD;
-        }
-
-        boolean rapid = engine.isRapidBidding(bidderId, windowSeconds, threshold);
-        System.out.println(rapid ? "Rapid bidding detected." : "No rapid bidding detected.");
-        pause(scanner);
-    }
-
-    private static void handlePriceCheck(AuctionEngine engine, Scanner scanner) {
-        double amount = readDouble(scanner, "Bid amount to evaluate: ");
-        boolean spike = engine.isPriceSpike(amount);
-        System.out.println(spike ? "Price spike detected." : "No price spike detected.");
         pause(scanner);
     }
 

@@ -31,16 +31,13 @@ AuctionEngine is a Java console application that simulates an online auction sys
 3. Show All Bids (Sorted)
 - Prints all bids from lowest to highest amount
 
-4. Check Rapid Bidding
-- Checks whether a bidder exceeded a bid count threshold inside a time window
+4. Show Recent Alerts
+- Displays recent automatic fraud alerts generated during bid placement
 
-5. Check Price Spike
-- Flags a bid amount if it exceeds `1.7x` the current highest bid
-
-6. Close Auction
+5. Close Auction
 - Stops new bids and displays winner
 
-7. Show Historical Snapshot
+6. Show Historical Snapshot
 - Lets you inspect any version of the auction history
 
 ## Data Structures and Why They Are Used
@@ -63,8 +60,9 @@ AuctionEngine is a Java console application that simulates an online auction sys
 ## Fraud Detection Rules
 
 - Rapid bidding:
-  - Input: `bidderId`, `windowSeconds`, `threshold`
-  - Condition: bids in window `> threshold`
+  - Automatic on each accepted bid
+  - Default: `3 bids` in `20 seconds` by the same bidder
+  - Condition: bids in window `>= threshold`
 
 - Price spike:
   - Constant: `PRICE_SPIKE_MULTIPLIER = 1.7`
