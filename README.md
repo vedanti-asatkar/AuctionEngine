@@ -1,77 +1,53 @@
 # AuctionEngine
 
-AuctionEngine is a Java console application that simulates an online auction system with efficient data-structure-backed operations.
+AuctionEngine is a Java auction simulator that demonstrates how multiple data structures can work together in a bidding system. The project currently includes both a console application and a Swing desktop UI built on the same backend engine.
 
-## Highlights
+## Current Features
 
-- Real-time highest bid tracking
-- Sorted bid listing
-- Rapid bidding detection per bidder
-- Price spike detection
-- Historical snapshots of bidding state
+- Place bids with validation
+- Track the current highest bid in real time
+- View all accepted bids in sorted order
+- Detect rapid bidding activity
+- Detect suspicious price spikes
+- Store recent fraud alerts
+- Inspect historical snapshots of auction state
+- Search bids by amount range from the Swing UI
+- Run built-in demo scenarios from the Swing UI
 
-## Tech Stack
+## Entry Points
 
-- Java (standard library only)
-- No external dependencies
+- `Main`
+  - Console-based auction app
+- `AuctionEngineSwingApp`
+  - Swing desktop application with buttons for bidding, alerts, snapshots, range queries, and demo simulation
 
-## Core Features
+## Data Structures Used
 
-1. Place Bid
-- Accepts bidder ID and amount
-- Validates:
-  - auction is open
-  - amount is positive
-  - amount is strictly greater than current highest bid
-- Runs fraud checks (rapid bidding and price spike)
-
-2. Show Highest Bid
-- Displays current highest bid instantly
-
-3. Show All Bids (Sorted)
-- Prints all bids from lowest to highest amount
-
-4. Show Recent Alerts
-- Displays recent automatic fraud alerts generated during bid placement
-
-5. Close Auction
-- Stops new bids and displays winner
-
-6. Show Historical Snapshot
-- Lets you inspect any version of the auction history
-
-## Data Structures and Why They Are Used
-
-1. `MaxHeap` (`src/structures/MaxHeap.java`)
-- Maintains highest bid at heap root for `O(1)` max lookup
-
-2. `RedBlackTree` (`src/structures/RedBlackTree.java`)
-- Maintains bids in balanced sorted structure
-- Inorder traversal outputs bids in ascending order
-
-3. `PersistentBidTree` (`src/structures/PersistentBidTree.java`)
-- Creates immutable versions after each bid
-- Enables historical queries without modifying past states
-
-4. `HashMap<String, List<Long>>` in `FraudDetector` (`src/service/FraudDetector.java`)
-- Stores bid timestamps per bidder
-- Supports sliding-window rapid bidding detection
+- `MaxHeap`
+  - Maintains fast access to the highest bid
+- `RedBlackTree`
+  - Keeps bids sorted for ordered traversal
+- `PersistentBidTree`
+  - Stores versioned snapshots of bidding history
+- `BPlusTree`
+  - Supports amount-based lookup and range queries
+- `HashMap<String, List<Long>>` in `FraudDetector`
+  - Tracks bidder activity timestamps for rapid-bidding detection
 
 ## Fraud Detection Rules
 
-- Rapid bidding:
-  - Automatic on each accepted bid
-  - Default: `3 bids` in `20 seconds` by the same bidder
-  - Condition: bids in window `>= threshold`
+- Rapid bidding
+  - Triggered when the same bidder places at least `3` bids within `20` seconds
+- Price spike
+  - Triggered when a new bid is greater than `1.7x` the current highest bid
 
-- Price spike:
-  - Constant: `PRICE_SPIKE_MULTIPLIER = 1.7`
-  - Condition: `newBidAmount > currentHighest * 1.7`
+Alerts are stored in memory and the engine keeps up to `50` recent alerts.
 
 ## Project Structure
 
 ```text
 src/
+  AuctionEngineSwingApp.java
   Main.java
   model/
     Bid.java
@@ -79,44 +55,102 @@ src/
     AuctionEngine.java
     FraudDetector.java
   structures/
+    BPlusTree.java
     MaxHeap.java
-    RedBlackTree.java
     PersistentBidTree.java
+    RedBlackTree.java
 ```
 
-## Run Locally
+## Requirements
 
-### VS Code
+- JDK 8 or newer
+- No external dependencies
 
-1. Open the project.
-2. Install Java extensions if prompted.
-3. Run `src/Main.java`.
+Check Java:
 
-### PowerShell / CLI
+```powershell
+java -version
+javac -version
+```
 
-From project root:
+## How To Build
+
+From the project root:
 
 ```powershell
 $files = Get-ChildItem -Recurse -Path src -Filter *.java | ForEach-Object { $_.FullName }
 javac -d out $files
+```
+
+This compiles all source files into the `out/` directory.
+
+## How To Run
+
+### Run the Console App
+
+```powershell
 java -cp out Main
 ```
 
-## Create GitHub Repository (Recommended)
+Console menu options currently include:
 
-From project root:
+- Place Bid
+- Show Highest Bid
+- Show All Bids (Sorted)
+- Show Recent Alerts
+- Close Auction
+- Show Historical Snapshot
+
+### Run the Swing App
 
 ```powershell
-git init
-git add .
-git commit -m "Initial commit: AuctionEngine"
-git branch -M main
-git remote add origin https://github.com/<your-username>/AuctionEngine.git
-git push -u origin main
+java -cp out AuctionEngineSwingApp
 ```
 
-## Notes
+The Swing app currently lets you:
 
-- History version `0` is an empty initial snapshot.
-- Bid timestamps are stored with `System.currentTimeMillis()`.
-- Build outputs may appear in `out/` or `bin/` depending on IDE configuration.
+- Place bids
+- View highest bid and total bid count
+- Show sorted bids
+- Run amount range queries
+- View recent alerts
+- Inspect history snapshots
+- Close the auction
+- Run demo scenarios for suspicious bidding behavior
+
+## Typical Workflow
+
+1. Compile the project.
+2. Start either `Main` or `AuctionEngineSwingApp`.
+3. Place bids with increasing amounts.
+4. Check alerts and snapshots as bids are added.
+5. Close the auction to lock the winner.
+
+## Implementation Notes
+
+- Bids must be greater than the current highest bid.
+- Closed auctions reject new bids.
+- Snapshot version `0` is the empty initial state.
+- Bid timestamps are generated with `System.currentTimeMillis()`.
+- `Bid.toString()` prints both a readable timestamp and raw milliseconds.
+
+## Output Directories
+
+- `out/`
+  - Recommended manual compile output
+- `bin/`
+  - May be used by some IDE setups
+
+## Running In VS Code
+
+If you use the Java extensions in VS Code:
+
+1. Open the project folder.
+2. Let VS Code detect the Java sources.
+3. Run either `src/Main.java` or `src/AuctionEngineSwingApp.java`.
+
+## Known Scope
+
+- Data is in-memory only and is not persisted to disk.
+- There is no networking, database, or authentication layer.
+- Fraud alerts are heuristic and intended for demonstration purposes.
