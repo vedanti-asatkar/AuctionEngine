@@ -60,6 +60,7 @@ public class AuctionEngineSwingApp {
         JButton placeBidButton = new JButton("Place Bid");
         JButton showHighestButton = new JButton("Show Highest");
         JButton showSortedButton = new JButton("Show Sorted Bids");
+        JButton rangeQueryButton = new JButton("Range Query");
         JButton showAlertsButton = new JButton("Show Alerts");
         JButton snapshotButton = new JButton("Show Snapshot");
         JButton closeAuctionButton = new JButton("Close Auction");
@@ -68,6 +69,7 @@ public class AuctionEngineSwingApp {
         bidPanel.add(placeBidButton);
         bidPanel.add(showHighestButton);
         bidPanel.add(showSortedButton);
+        bidPanel.add(rangeQueryButton);
         bidPanel.add(showAlertsButton);
         bidPanel.add(snapshotButton);
         bidPanel.add(closeAuctionButton);
@@ -86,6 +88,7 @@ public class AuctionEngineSwingApp {
         placeBidButton.addActionListener(e -> placeBid());
         showHighestButton.addActionListener(e -> showHighest());
         showSortedButton.addActionListener(e -> showSortedBids());
+        rangeQueryButton.addActionListener(e -> showRangeQuery());
         showAlertsButton.addActionListener(e -> showAlerts());
         snapshotButton.addActionListener(e -> showSnapshot());
         closeAuctionButton.addActionListener(e -> closeAuction());
@@ -137,7 +140,7 @@ public class AuctionEngineSwingApp {
 
     private void showHighest() {
         Bid highest = engine.getHighestBid();
-        appendOutput(highest == null ? "No bids yet." : "Highest: " + highest);
+        appendOutput(highest == null ? "No bids yet." : "Highest: " + formatBidForDisplay(highest));
     }
 
     private void showSortedBids() {
@@ -149,7 +152,56 @@ public class AuctionEngineSwingApp {
             return;
         }
         for (Bid bid : bids) {
-            appendOutput("  " + bid);
+            appendOutput("  " + formatBidForDisplay(bid));
+        }
+    }
+
+    private void showRangeQuery() {
+        JTextField minField = new JTextField();
+        JTextField maxField = new JTextField();
+
+        JPanel panel = new JPanel(new GridLayout(0, 2, 8, 8));
+        panel.add(new JLabel("Min Amount"));
+        panel.add(minField);
+        panel.add(new JLabel("Max Amount"));
+        panel.add(maxField);
+
+        int result = JOptionPane.showConfirmDialog(
+                null,
+                panel,
+                "Amount Range Query",
+                JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.PLAIN_MESSAGE
+        );
+
+        if (result != JOptionPane.OK_OPTION) {
+            return;
+        }
+
+        double minAmount;
+        double maxAmount;
+        try {
+            minAmount = Double.parseDouble(minField.getText().trim());
+            maxAmount = Double.parseDouble(maxField.getText().trim());
+        } catch (NumberFormatException ex) {
+            showError("Min/Max amounts must be valid numbers.");
+            return;
+        }
+
+        if (minAmount > maxAmount) {
+            showError("Min amount must be less than or equal to max amount.");
+            return;
+        }
+
+        List<Bid> bidsInRange = engine.getBidsInAmountRange(minAmount, maxAmount);
+        appendOutput("Bids in range [" + minAmount + ", " + maxAmount + "]:");
+        if (bidsInRange.isEmpty()) {
+            appendOutput("No bids found in this range.");
+            return;
+        }
+
+        for (Bid bid : bidsInRange) {
+            appendOutput("  " + formatBidForDisplay(bid));
         }
     }
 
@@ -186,14 +238,14 @@ public class AuctionEngineSwingApp {
 
         Bid highest = engine.getHighestBidAtVersion(version);
         appendOutput("Snapshot version " + version + ":");
-        appendOutput("Highest: " + (highest == null ? "None" : highest));
+        appendOutput("Highest: " + (highest == null ? "None" : formatBidForDisplay(highest)));
         List<Bid> bids = engine.getBidsAtVersion(version);
         if (bids.isEmpty()) {
             appendOutput("No bids in this version.");
             return;
         }
         for (Bid bid : bids) {
-            appendOutput("  " + bid);
+            appendOutput("  " + formatBidForDisplay(bid));
         }
     }
 
@@ -369,6 +421,10 @@ public class AuctionEngineSwingApp {
 
     private void showError(String message) {
         JOptionPane.showMessageDialog(null, message, "Input Error", JOptionPane.ERROR_MESSAGE);
+    }
+
+    private String formatBidForDisplay(Bid bid) {
+        return "Bidder: " + bid.getBidderId() + ", Amount: " + bid.getAmount();
     }
 
     public static void main(String[] args) {

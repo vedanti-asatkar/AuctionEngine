@@ -1,6 +1,7 @@
 package service;
 
 import model.Bid;
+import structures.BPlusTree;
 import structures.MaxHeap;
 import structures.PersistentBidTree;
 import structures.RedBlackTree;
@@ -14,10 +15,12 @@ public class AuctionEngine {
     private static final int DEFAULT_RAPID_THRESHOLD = 3;
     private static final double PRICE_SPIKE_MULTIPLIER = 1.7;
     private static final int MAX_RECENT_ALERTS = 50;
+    private static final int DEFAULT_BPLUS_ORDER = 4;
 
     private MaxHeap maxHeap;
     private RedBlackTree redBlackTree;
     private PersistentBidTree persistentBidTree;
+    private BPlusTree bPlusTree;
     private FraudDetector fraudDetector;
     private final List<String> recentAlerts;
     private int totalBids;
@@ -27,6 +30,7 @@ public class AuctionEngine {
         maxHeap = new MaxHeap();
         redBlackTree = new RedBlackTree();
         persistentBidTree = new PersistentBidTree();
+        bPlusTree = new BPlusTree(DEFAULT_BPLUS_ORDER);
         fraudDetector = new FraudDetector();
         recentAlerts = new ArrayList<>();
         totalBids = 0;
@@ -56,6 +60,7 @@ public class AuctionEngine {
         maxHeap.insert(bid);
         redBlackTree.insert(bid);
         persistentBidTree.addVersion(bid);
+        bPlusTree.insert(amount, bid);
 
         fraudDetector.recordBid(bidderId, bid.getTimestamp());
         totalBids++;
@@ -125,6 +130,14 @@ public class AuctionEngine {
 
     public boolean isValidHistoryVersion(int version) {
         return persistentBidTree.isValidVersion(version);
+    }
+
+    public List<Bid> getBidsByAmount(double amount) {
+        return bPlusTree.search(amount);
+    }
+
+    public List<Bid> getBidsInAmountRange(double minAmount, double maxAmount) {
+        return bPlusTree.rangeSearch(minAmount, maxAmount);
     }
 
     public List<String> getRecentAlerts() {
