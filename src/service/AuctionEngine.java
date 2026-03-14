@@ -1,13 +1,17 @@
 package service;
 
+import model.Auction;
 import model.Bid;
 import structures.BPlusTree;
+import structures.IntervalTree;
 import structures.MaxHeap;
 import structures.PersistentBidTree;
 import structures.RedBlackTree;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 public class AuctionEngine {
 
@@ -17,28 +21,75 @@ public class AuctionEngine {
     private static final int MAX_RECENT_ALERTS = 50;
     private static final int DEFAULT_BPLUS_ORDER = 4;
 
-    private MaxHeap maxHeap;
-    private RedBlackTree redBlackTree;
-    private PersistentBidTree persistentBidTree;
-    private BPlusTree bPlusTree;
-    private FraudDetector fraudDetector;
-    private final List<String> recentAlerts;
-    private int totalBids;
-    private boolean auctionOpen;
-
-    public AuctionEngine() {
-        maxHeap = new MaxHeap();
-        redBlackTree = new RedBlackTree();
-        persistentBidTree = new PersistentBidTree();
-        bPlusTree = new BPlusTree(DEFAULT_BPLUS_ORDER);
-        fraudDetector = new FraudDetector();
-        recentAlerts = new ArrayList<>();
-        totalBids = 0;
-        auctionOpen = true;
+    private static final class AuctionState {
+        private final MaxHeap maxHeap = new MaxHeap();
+        private final RedBlackTree redBlackTree = new RedBlackTree();
+        private final PersistentBidTree persistentBidTree = new PersistentBidTree();
+        private final BPlusTree bPlusTree = new BPlusTree(DEFAULT_BPLUS_ORDER);
+        private final FraudDetector fraudDetector = new FraudDetector();
+        private final List<String> recentAlerts = new ArrayList<>();
+        private int totalBids;
+        private boolean manuallyClosed;
     }
 
-    public void placeBid(String bidderId, double amount) {
-        if (!auctionOpen) {
+    private final Map<String, Auction> auctions;
+    private final Map<String, AuctionState> auctionStates;
+    private final IntervalTree auctionSchedule;
+
+    public AuctionEngine() {
+        auctions = new LinkedHashMap<>();
+        auctionStates = new LinkedHashMap<>();
+        auctionSchedule = new IntervalTree();
+    }
+
+    public void createAuction(String auctionId, String itemName, long start, long end) {
+        if (auctions.containsKey(auctionId)) {
+            throw new IllegalArgumentException("Auction ID already exists: " + auctionId);
+        }
+
+        Auction auction = new Auction(auctionId, itemName, start, end);
+        auctions.put(auctionId, auction);
+        auctionStates.put(auctionId, new AuctionState());
+        auctionSchedule.insert(auction);
+    }
+
+    public List<Auction> getActiveAuctions() {
+        long now = System.currentTimeMillis();
+        List<Auction> activeFromSchedule = auctionSchedule.searchActive(now);
+        List<Auction> visibleActiveAuctions = new ArrayList<>();
+
+        for (Auction auction : activeFromSchedule) {
+            AuctionState state = auctionStates.get(auction.getAuctionId());
+            if (state != null && !state.manuallyClosed) {
+                visibleActiveAuctions.add(auction);
+            }
+        }
+
+        return visibleActiveAuctions;
+    }
+
+    public boolean isAuctionActive(String auctionId) {
+        Auction auction = auctions.get(auctionId);
+        AuctionState state = auctionStates.get(auctionId);
+        return auction != null
+                && state != null
+                && !state.manuallyClosed
+                && auction.isActiveAt(System.currentTimeMillis());
+    }
+
+    public Auction getAuction(String auctionId) {
+        return auctions.get(auctionId);
+    }
+
+    public List<Auction> getAllAuctions() {
+        return new ArrayList<>(auctions.values());
+    }
+
+    public void placeBid(String auctionId, String bidderId, double amount) {
+        Auction auction = requireAuction(auctionId);
+        AuctionState state = requireAuctionState(auctionId);
+
+        if (!isAuctionActive(auctionId)) {
             System.out.println("Auction is closed. No more bids are accepted.");
             return;
         }
@@ -48,106 +99,122 @@ public class AuctionEngine {
             return;
         }
 
-        Bid highest = maxHeap.getMax();
+        Bid highest = state.maxHeap.getMax();
         if (highest != null && amount <= highest.getAmount()) {
             System.out.println("Bid must be higher than current highest bid.");
             return;
         }
 
-        boolean priceSpike = isPriceSpike(amount);
+        boolean priceSpike = isPriceSpike(auctionId, amount);
 
         Bid bid = new Bid(bidderId, amount);
-        maxHeap.insert(bid);
-        redBlackTree.insert(bid);
-        persistentBidTree.addVersion(bid);
-        bPlusTree.insert(amount, bid);
+        state.maxHeap.insert(bid);
+        state.redBlackTree.insert(bid);
+        state.persistentBidTree.addVersion(bid);
+        state.bPlusTree.insert(amount, bid);
 
-        fraudDetector.recordBid(bidderId, bid.getTimestamp());
-        totalBids++;
+        state.fraudDetector.recordBid(bidderId, bid.getTimestamp());
+        state.totalBids++;
 
-        boolean rapidBidding = isRapidBidding(bidderId, DEFAULT_RAPID_WINDOW_SECONDS, DEFAULT_RAPID_THRESHOLD);
+        boolean rapidBidding = isRapidBidding(auctionId, bidderId, DEFAULT_RAPID_WINDOW_SECONDS, DEFAULT_RAPID_THRESHOLD);
 
         System.out.println("Bid placed successfully.");
 
         if (rapidBidding || priceSpike) {
             System.out.println("WARNING: Unusual bidding activity detected.");
             if (rapidBidding) {
-                String message = "Rapid bidding by bidder: " + bidderId + " at amount " + amount;
+                String message = "Auction " + auction.getAuctionId() + ": Rapid bidding by bidder: " + bidderId + " at amount " + amount;
                 System.out.println("WARNING: Unusual bidding activity detected (" + message + ").");
-                addAlert(message);
+                addAlert(state, message);
             }
             if (priceSpike) {
-                String message = "Price spike at amount " + amount;
+                String message = "Auction " + auction.getAuctionId() + ": Price spike at amount " + amount;
                 System.out.println("WARNING: Unusual bidding activity detected (" + message + ").");
-                addAlert(message);
+                addAlert(state, message);
             }
         }
     }
 
-    public Bid getHighestBid() {
-        return maxHeap.getMax();
+    public Bid getHighestBid(String auctionId) {
+        return requireAuctionState(auctionId).maxHeap.getMax();
     }
 
-    public boolean isRapidBidding(String bidderId, int windowSeconds, int threshold) {
-        return fraudDetector.isRapidBidding(bidderId, windowSeconds, threshold);
+    public boolean isRapidBidding(String auctionId, String bidderId, int windowSeconds, int threshold) {
+        return requireAuctionState(auctionId).fraudDetector.isRapidBidding(bidderId, windowSeconds, threshold);
     }
 
-    public boolean isPriceSpike(double newBidAmount) {
-        Bid currentHighest = getHighestBid();
+    public boolean isPriceSpike(String auctionId, double newBidAmount) {
+        Bid currentHighest = getHighestBid(auctionId);
         if (currentHighest == null) {
             return false;
         }
         return newBidAmount > (currentHighest.getAmount() * PRICE_SPIKE_MULTIPLIER);
     }
 
-    public int getTotalBids() {
-        return totalBids;
+    public int getTotalBids(String auctionId) {
+        return requireAuctionState(auctionId).totalBids;
     }
 
-    public boolean isAuctionOpen() {
-        return auctionOpen;
+    public boolean isAuctionOpen(String auctionId) {
+        return isAuctionActive(auctionId);
     }
 
-    public void closeAuction() {
-        auctionOpen = false;
+    public void closeAuction(String auctionId) {
+        requireAuctionState(auctionId).manuallyClosed = true;
     }
 
-    public void printSortedBids() {
-        redBlackTree.inorderTraversal();
+    public void printSortedBids(String auctionId) {
+        requireAuctionState(auctionId).redBlackTree.inorderTraversal();
     }
 
-    public int getHistoryVersionCount() {
-        return persistentBidTree.getVersionCount();
+    public int getHistoryVersionCount(String auctionId) {
+        return requireAuctionState(auctionId).persistentBidTree.getVersionCount();
     }
 
-    public Bid getHighestBidAtVersion(int version) {
-        return persistentBidTree.getHighestInVersion(version);
+    public Bid getHighestBidAtVersion(String auctionId, int version) {
+        return requireAuctionState(auctionId).persistentBidTree.getHighestInVersion(version);
     }
 
-    public List<Bid> getBidsAtVersion(int version) {
-        return persistentBidTree.getBidsInVersion(version);
+    public List<Bid> getBidsAtVersion(String auctionId, int version) {
+        return requireAuctionState(auctionId).persistentBidTree.getBidsInVersion(version);
     }
 
-    public boolean isValidHistoryVersion(int version) {
-        return persistentBidTree.isValidVersion(version);
+    public boolean isValidHistoryVersion(String auctionId, int version) {
+        return requireAuctionState(auctionId).persistentBidTree.isValidVersion(version);
     }
 
-    public List<Bid> getBidsByAmount(double amount) {
-        return bPlusTree.search(amount);
+    public List<Bid> getBidsByAmount(String auctionId, double amount) {
+        return requireAuctionState(auctionId).bPlusTree.search(amount);
     }
 
-    public List<Bid> getBidsInAmountRange(double minAmount, double maxAmount) {
-        return bPlusTree.rangeSearch(minAmount, maxAmount);
+    public List<Bid> getBidsInAmountRange(String auctionId, double minAmount, double maxAmount) {
+        return requireAuctionState(auctionId).bPlusTree.rangeSearch(minAmount, maxAmount);
     }
 
-    public List<String> getRecentAlerts() {
-        return Collections.unmodifiableList(recentAlerts);
+    public List<String> getRecentAlerts(String auctionId) {
+        return Collections.unmodifiableList(requireAuctionState(auctionId).recentAlerts);
     }
 
-    private void addAlert(String message) {
-        if (recentAlerts.size() == MAX_RECENT_ALERTS) {
-            recentAlerts.remove(0);
+    private AuctionState requireAuctionState(String auctionId) {
+        AuctionState state = auctionStates.get(auctionId);
+        if (state == null) {
+            throw new IllegalArgumentException("Unknown auction ID: " + auctionId);
         }
-        recentAlerts.add(message);
+        return state;
+    }
+
+    private Auction requireAuction(String auctionId) {
+        Auction auction = auctions.get(auctionId);
+        if (auction == null) {
+            throw new IllegalArgumentException("Unknown auction ID: " + auctionId);
+        }
+        return auction;
+    }
+
+    private void addAlert(AuctionState state, String message) {
+        if (state.recentAlerts.size() == MAX_RECENT_ALERTS) {
+            state.recentAlerts.remove(0);
+        }
+        state.recentAlerts.add(message);
     }
 }

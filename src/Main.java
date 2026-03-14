@@ -1,5 +1,8 @@
+import model.Auction;
 import model.Bid;
 import service.AuctionEngine;
+
+import java.util.List;
 import java.util.Scanner;
 
 public class Main {
@@ -10,6 +13,7 @@ public class Main {
 
     public static void main(String[] args) {
         AuctionEngine engine = new AuctionEngine();
+        createDefaultAuction(engine);
         Scanner scanner = new Scanner(System.in);
 
         while (true) {
@@ -21,13 +25,11 @@ public class Main {
                     handlePlaceBid(engine, scanner);
                     break;
                 case 2:
-                    showHighestBid(engine);
+                    showHighestBid(engine, scanner);
                     pause(scanner);
                     break;
                 case 3:
-                    System.out.println("\nSorted bids (low to high):");
-                    engine.printSortedBids();
-                    pause(scanner);
+                    handleSortedBids(engine, scanner);
                     break;
                 case 4:
                     handleAlertsView(engine, scanner);
@@ -52,10 +54,11 @@ public class Main {
 
     private static void printMenu(AuctionEngine engine) {
         clearScreen();
-        Bid highest = engine.getHighestBid();
-        System.out.println("Current Highest: " + (highest == null ? "None" : highest.getAmount()));
-        System.out.println("Total Bids: " + engine.getTotalBids());
-        System.out.println("Auction Status: " + (engine.isAuctionOpen() ? "OPEN" : "CLOSED"));
+        List<Auction> activeAuctions = engine.getActiveAuctions();
+        System.out.println("Active Auctions: " + activeAuctions.size());
+        for (Auction auction : activeAuctions) {
+            System.out.println(" - " + auction.getAuctionId() + " (" + auction.getItemName() + ")");
+        }
         System.out.println("===================================");
         System.out.println("      ONLINE AUCTION ENGINE");
         System.out.println("===================================");
@@ -70,6 +73,13 @@ public class Main {
     }
 
     private static void handlePlaceBid(AuctionEngine engine, Scanner scanner) {
+        String auctionId = selectAuction(engine, scanner);
+        if (auctionId == null) {
+            System.out.println("No active auction selected.");
+            pause(scanner);
+            return;
+        }
+
         System.out.print("Bidder ID: ");
         String bidderId = scanner.nextLine().trim();
         while (bidderId.isEmpty()) {
@@ -84,12 +94,18 @@ public class Main {
             return;
         }
 
-        engine.placeBid(bidderId, amount);
+        engine.placeBid(auctionId, bidderId, amount);
         pause(scanner);
     }
 
-    private static void showHighestBid(AuctionEngine engine) {
-        Bid highest = engine.getHighestBid();
+    private static void showHighestBid(AuctionEngine engine, Scanner scanner) {
+        String auctionId = selectAuction(engine, scanner);
+        if (auctionId == null) {
+            System.out.println("No active auction selected.");
+            return;
+        }
+
+        Bid highest = engine.getHighestBid(auctionId);
         System.out.println("\nHighest bid:");
         if (highest == null) {
             System.out.println("No bids yet.");
@@ -99,11 +115,18 @@ public class Main {
     }
 
     private static void handleAlertsView(AuctionEngine engine, Scanner scanner) {
+        String auctionId = selectAnyAuction(engine, scanner);
+        if (auctionId == null) {
+            System.out.println("No auction available.");
+            pause(scanner);
+            return;
+        }
+
         System.out.println("\nRecent fraud alerts:");
-        if (engine.getRecentAlerts().isEmpty()) {
+        if (engine.getRecentAlerts(auctionId).isEmpty()) {
             System.out.println("No alerts yet.");
         } else {
-            for (String alert : engine.getRecentAlerts()) {
+            for (String alert : engine.getRecentAlerts(auctionId)) {
                 System.out.println(alert);
             }
         }
@@ -111,14 +134,21 @@ public class Main {
     }
 
     private static void handleCloseAuction(AuctionEngine engine, Scanner scanner) {
-        if (!engine.isAuctionOpen()) {
+        String auctionId = selectAnyAuction(engine, scanner);
+        if (auctionId == null) {
+            System.out.println("No auction available.");
+            pause(scanner);
+            return;
+        }
+
+        if (!engine.isAuctionOpen(auctionId)) {
             System.out.println("Auction is already closed.");
             pause(scanner);
             return;
         }
 
-        engine.closeAuction();
-        Bid winner = engine.getHighestBid();
+        engine.closeAuction(auctionId);
+        Bid winner = engine.getHighestBid(auctionId);
         if (winner == null) {
             System.out.println("Auction closed. No bids were placed.");
         } else {
@@ -129,24 +159,75 @@ public class Main {
     }
 
     private static void handleHistorySnapshot(AuctionEngine engine, Scanner scanner) {
-        int latestVersion = engine.getHistoryVersionCount();
+        String auctionId = selectAnyAuction(engine, scanner);
+        if (auctionId == null) {
+            System.out.println("No auction available.");
+            pause(scanner);
+            return;
+        }
+
+        int latestVersion = engine.getHistoryVersionCount(auctionId);
         System.out.println("Available versions: 0 to " + latestVersion);
         int version = readInt(scanner, "Enter version to inspect: ");
 
-        if (!engine.isValidHistoryVersion(version)) {
+        if (!engine.isValidHistoryVersion(auctionId, version)) {
             System.out.println("Invalid version.");
             pause(scanner);
             return;
         }
 
-        Bid highestAtVersion = engine.getHighestBidAtVersion(version);
+        Bid highestAtVersion = engine.getHighestBidAtVersion(auctionId, version);
         System.out.println("\nSnapshot version: " + version);
         System.out.println("Highest at version: " + (highestAtVersion == null ? "None" : highestAtVersion));
         System.out.println("Bids in this version (sorted):");
-        for (Bid bid : engine.getBidsAtVersion(version)) {
+        for (Bid bid : engine.getBidsAtVersion(auctionId, version)) {
             System.out.println(bid);
         }
         pause(scanner);
+    }
+
+    private static void handleSortedBids(AuctionEngine engine, Scanner scanner) {
+        String auctionId = selectAnyAuction(engine, scanner);
+        if (auctionId == null) {
+            System.out.println("No auction available.");
+            pause(scanner);
+            return;
+        }
+
+        System.out.println("\nSorted bids (low to high):");
+        engine.printSortedBids(auctionId);
+        pause(scanner);
+    }
+
+    private static String selectAuction(AuctionEngine engine, Scanner scanner) {
+        List<Auction> activeAuctions = engine.getActiveAuctions();
+        if (activeAuctions.isEmpty()) {
+            return null;
+        }
+        return promptAuctionSelection(activeAuctions, scanner);
+    }
+
+    private static String selectAnyAuction(AuctionEngine engine, Scanner scanner) {
+        List<Auction> auctions = engine.getAllAuctions();
+        if (auctions.isEmpty()) {
+            return null;
+        }
+        return promptAuctionSelection(auctions, scanner);
+    }
+
+    private static String promptAuctionSelection(List<Auction> auctions, Scanner scanner) {
+        System.out.println("Available auctions:");
+        for (Auction auction : auctions) {
+            System.out.println(" - " + auction.getAuctionId() + ": " + auction.getItemName());
+        }
+        System.out.print("Enter auction ID: ");
+        return scanner.nextLine().trim();
+    }
+
+    private static void createDefaultAuction(AuctionEngine engine) {
+        long now = System.currentTimeMillis();
+        engine.createAuction("AUCT-1", "Demo Item", now - 60000, now + 3600000);
+        engine.createAuction("AUCT-2", "Vintage Clock", now - 30000, now + 5400000);
     }
 
     private static int readInt(Scanner scanner, String prompt) {
