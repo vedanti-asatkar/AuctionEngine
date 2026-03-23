@@ -1,6 +1,8 @@
 package structures;
 
 import model.Bid;
+import java.util.ArrayList;
+import java.util.List;
 
 public class RedBlackTree {
 
@@ -149,15 +151,17 @@ public class RedBlackTree {
         root.color = BLACK;
     }
 
-    public void inorderTraversal() {
-        inorderHelper(root);
+    public List<Bid> inorderTraversal() {
+        List<Bid> bids = new ArrayList<>();
+        inorderHelper(root, bids);
+        return bids;
     }
 
-    private void inorderHelper(Node node) {
+    private void inorderHelper(Node node, List<Bid> bids) {
         if (node != null) {
-            inorderHelper(node.left);
-            System.out.println(node.bid);
-            inorderHelper(node.right);
+            inorderHelper(node.left, bids);
+            bids.add(node.bid);
+            inorderHelper(node.right, bids);
         }
     }
 }

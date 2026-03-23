@@ -302,17 +302,17 @@ public class AuctionEngineSwingApp {
             return;
         }
 
-        int beforeCount = engine.getTotalBids(currentAuctionId);
-        engine.placeBid(currentAuctionId, bidderId, amount);
-        int afterCount = engine.getTotalBids(currentAuctionId);
+        AuctionEngine.BidPlacementResult result = engine.placeBid(currentAuctionId, bidderId, amount);
 
-        if (afterCount > beforeCount) {
+        if (result.isAccepted()) {
             appendOutput("Placed bid in " + currentAuctionId + ": bidder=" + bidderId + ", amount=" + amount);
             bidderIdField.setText("");
             amountField.setText("");
-            showLatestAlertsIfAny();
+            for (String alert : result.getAlerts()) {
+                appendOutput("Alert: " + alert);
+            }
         } else {
-            appendOutput("Bid rejected by engine rules.");
+            appendOutput(result.getMessage());
         }
 
         refreshStatus();
@@ -330,9 +330,8 @@ public class AuctionEngineSwingApp {
         if (!ensureAuctionSelected()) {
             return;
         }
-        int latestVersion = engine.getHistoryVersionCount(currentAuctionId);
-        List<Bid> bids = engine.getBidsAtVersion(currentAuctionId, latestVersion);
-        appendOutput("Sorted bids for " + currentAuctionId + " at latest version " + latestVersion + ":");
+        List<Bid> bids = engine.getSortedBids(currentAuctionId);
+        appendOutput("Sorted bids for " + currentAuctionId + ":");
         if (bids.isEmpty()) {
             appendOutput("No bids yet.");
             return;
@@ -399,8 +398,12 @@ public class AuctionEngineSwingApp {
         if (!ensureAuctionSelected()) {
             return;
         }
-        List<String> alerts = engine.getRecentAlerts(currentAuctionId);
-        appendOutput("Recent alerts for " + currentAuctionId + ":");
+        showAlertsForAuction(currentAuctionId);
+    }
+
+    private void showAlertsForAuction(String auctionId) {
+        List<String> alerts = engine.getRecentAlerts(auctionId);
+        appendOutput("Recent alerts for " + auctionId + ":");
         if (alerts.isEmpty()) {
             appendOutput("No alerts.");
             return;
@@ -517,73 +520,74 @@ public class AuctionEngineSwingApp {
         }
 
         String scenario = (String) scenarioBox.getSelectedItem();
-        runScenarioInBackground(scenario, bidCount, delayMs);
+        runScenarioInBackground(currentAuctionId, scenario, bidCount, delayMs);
     }
 
-    private void runScenarioInBackground(String scenario, int bidCount, int delayMs) {
-        Thread worker = new Thread(() -> runScenario(scenario, bidCount, delayMs), "demo-simulator");
+    private void runScenarioInBackground(String auctionId, String scenario, int bidCount, int delayMs) {
+        Thread worker = new Thread(() -> runScenario(auctionId, scenario, bidCount, delayMs), "demo-simulator");
         worker.setDaemon(true);
         worker.start();
     }
 
-    private void runScenario(String scenario, int bidCount, int delayMs) {
-        if (!engine.isAuctionOpen(currentAuctionId)) {
+    private void runScenario(String auctionId, String scenario, int bidCount, int delayMs) {
+        if (!engine.isAuctionOpen(auctionId)) {
             appendOutputOnEdt("Cannot run demo: auction is closed.");
             return;
         }
 
-        appendOutputOnEdt("Running demo scenario for " + currentAuctionId + ": " + scenario);
-        double nextAmount = getNextAmount();
+        appendOutputOnEdt("Running demo scenario for " + auctionId + ": " + scenario);
+        double nextAmount = getNextAmount(auctionId);
 
         if ("Rapid Bidding".equals(scenario)) {
             int count = Math.max(bidCount, 3);
-            nextAmount = placeBids(count, 1, "rapid_user_", nextAmount, delayMs);
+            nextAmount = placeBids(auctionId, count, 1, "rapid_user_", nextAmount, delayMs);
         } else if ("Price Spike".equals(scenario)) {
-            if (engine.getHighestBid(currentAuctionId) == null) {
-                placeSingleBid("price_base", nextAmount);
+            if (engine.getHighestBid(auctionId) == null) {
+                placeSingleBid(auctionId, "price_base", nextAmount);
                 nextAmount += 1.0;
                 sleepQuietly(delayMs);
             }
-            Bid highest = engine.getHighestBid(currentAuctionId);
+            Bid highest = engine.getHighestBid(auctionId);
             if (highest != null) {
                 double spikeAmount = Math.floor(highest.getAmount() * 1.8) + 1.0;
-                placeSingleBid("price_user", spikeAmount);
+                placeSingleBid(auctionId, "price_user", spikeAmount);
             }
         } else if ("Rapid + Price Alerts".equals(scenario)) {
-            nextAmount = placeBids(Math.max(bidCount, 3), 1, "rapid_user_", nextAmount, delayMs);
-            Bid highest = engine.getHighestBid(currentAuctionId);
+            nextAmount = placeBids(auctionId, Math.max(bidCount, 3), 1, "rapid_user_", nextAmount, delayMs);
+            Bid highest = engine.getHighestBid(auctionId);
             if (highest != null) {
                 double spikeAmount = Math.floor(highest.getAmount() * 1.8) + 1.0;
-                placeSingleBid("price_user", spikeAmount);
+                placeSingleBid(auctionId, "price_user", spikeAmount);
             }
         }
 
         SwingUtilities.invokeLater(() -> {
             refreshStatus();
-            appendOutput("Demo complete.");
-            showAlerts();
+            appendOutput("Demo complete for " + auctionId + ".");
+            showAlertsForAuction(auctionId);
         });
     }
 
-    private double placeBids(int count, int bidderPool, String bidderPrefix, double startAmount, int delayMs) {
+    private double placeBids(String auctionId, int count, int bidderPool, String bidderPrefix, double startAmount, int delayMs) {
         double amount = startAmount;
         for (int i = 0; i < count; i++) {
             String bidderId = bidderPrefix + ((i % bidderPool) + 1);
-            placeSingleBid(bidderId, amount);
+            placeSingleBid(auctionId, bidderId, amount);
             amount += 1.0;
             sleepQuietly(delayMs);
         }
         return amount;
     }
 
-    private void placeSingleBid(String bidderId, double amount) {
-        int before = engine.getTotalBids(currentAuctionId);
-        engine.placeBid(currentAuctionId, bidderId, amount);
-        int after = engine.getTotalBids(currentAuctionId);
-        if (after > before) {
-            appendOutputOnEdt("Placed bid in " + currentAuctionId + ": bidder=" + bidderId + ", amount=" + amount);
+    private void placeSingleBid(String auctionId, String bidderId, double amount) {
+        AuctionEngine.BidPlacementResult result = engine.placeBid(auctionId, bidderId, amount);
+        if (result.isAccepted()) {
+            appendOutputOnEdt("Placed bid in " + auctionId + ": bidder=" + bidderId + ", amount=" + amount);
+            for (String alert : result.getAlerts()) {
+                appendOutputOnEdt("Alert: " + alert);
+            }
         } else {
-            appendOutputOnEdt("Bid rejected during demo in " + currentAuctionId + ": bidder=" + bidderId + ", amount=" + amount);
+            appendOutputOnEdt(result.getMessage() + " [" + auctionId + ": bidder=" + bidderId + ", amount=" + amount + "]");
         }
     }
 
@@ -616,16 +620,6 @@ public class AuctionEngineSwingApp {
         statusLabel.setForeground(open ? new Color(28, 128, 76) : new Color(160, 48, 48));
     }
 
-    private void showLatestAlertsIfAny() {
-        List<String> alerts = currentAuctionId == null
-                ? List.of()
-                : engine.getRecentAlerts(currentAuctionId);
-        if (alerts.isEmpty()) {
-            return;
-        }
-        appendOutput("Latest alert: " + alerts.get(alerts.size() - 1));
-    }
-
     private void appendOutput(String line) {
         outputArea.append(line + "\n");
         outputArea.setCaretPosition(outputArea.getDocument().getLength());
@@ -635,11 +629,11 @@ public class AuctionEngineSwingApp {
         SwingUtilities.invokeLater(() -> appendOutput(line));
     }
 
-    private double getNextAmount() {
-        if (currentAuctionId == null) {
+    private double getNextAmount(String auctionId) {
+        if (auctionId == null) {
             return 100.0;
         }
-        Bid highest = engine.getHighestBid(currentAuctionId);
+        Bid highest = engine.getHighestBid(auctionId);
         if (highest == null) {
             return 100.0;
         }

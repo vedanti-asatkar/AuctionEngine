@@ -9,12 +9,19 @@ public class Bid {
     private static final DateTimeFormatter DISPLAY_TIME_FORMATTER =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
 
-    private String bidderId;
-    private double amount;
-    private long timestamp;
+    private final String bidderId;
+    private final double amount;
+    private final long timestamp;
 
     public Bid(String bidderId, double amount) {
-        this.bidderId = bidderId;
+        if (bidderId == null || bidderId.trim().isEmpty()) {
+            throw new IllegalArgumentException("Bidder ID cannot be empty.");
+        }
+        if (!Double.isFinite(amount) || amount <= 0) {
+            throw new IllegalArgumentException("Bid amount must be a positive finite number.");
+        }
+
+        this.bidderId = bidderId.trim();
         this.amount = amount;
         this.timestamp = System.currentTimeMillis();
     }

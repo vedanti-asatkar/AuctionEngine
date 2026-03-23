@@ -21,6 +21,30 @@ public class AuctionEngine {
     private static final int MAX_RECENT_ALERTS = 50;
     private static final int DEFAULT_BPLUS_ORDER = 4;
 
+    public static final class BidPlacementResult {
+        private final boolean accepted;
+        private final String message;
+        private final List<String> alerts;
+
+        private BidPlacementResult(boolean accepted, String message, List<String> alerts) {
+            this.accepted = accepted;
+            this.message = message;
+            this.alerts = alerts;
+        }
+
+        public boolean isAccepted() {
+            return accepted;
+        }
+
+        public String getMessage() {
+            return message;
+        }
+
+        public List<String> getAlerts() {
+            return alerts;
+        }
+    }
+
     private static final class AuctionState {
         private final MaxHeap maxHeap = new MaxHeap();
         private final RedBlackTree redBlackTree = new RedBlackTree();
@@ -85,24 +109,25 @@ public class AuctionEngine {
         return new ArrayList<>(auctions.values());
     }
 
-    public void placeBid(String auctionId, String bidderId, double amount) {
+    public BidPlacementResult placeBid(String auctionId, String bidderId, double amount) {
         Auction auction = requireAuction(auctionId);
         AuctionState state = requireAuctionState(auctionId);
 
         if (!isAuctionActive(auctionId)) {
-            System.out.println("Auction is closed. No more bids are accepted.");
-            return;
+            return rejected("Auction is closed. No more bids are accepted.");
         }
 
-        if (amount <= 0) {
-            System.out.println("Bid amount must be greater than 0.");
-            return;
+        if (bidderId == null || bidderId.trim().isEmpty()) {
+            return rejected("Bidder ID cannot be empty.");
+        }
+
+        if (!Double.isFinite(amount) || amount <= 0) {
+            return rejected("Bid amount must be greater than 0.");
         }
 
         Bid highest = state.maxHeap.getMax();
         if (highest != null && amount <= highest.getAmount()) {
-            System.out.println("Bid must be higher than current highest bid.");
-            return;
+            return rejected("Bid must be higher than current highest bid.");
         }
 
         boolean priceSpike = isPriceSpike(auctionId, amount);
@@ -117,22 +142,22 @@ public class AuctionEngine {
         state.totalBids++;
 
         boolean rapidBidding = isRapidBidding(auctionId, bidderId, DEFAULT_RAPID_WINDOW_SECONDS, DEFAULT_RAPID_THRESHOLD);
-
-        System.out.println("Bid placed successfully.");
+        List<String> triggeredAlerts = new ArrayList<>();
 
         if (rapidBidding || priceSpike) {
-            System.out.println("WARNING: Unusual bidding activity detected.");
             if (rapidBidding) {
                 String message = "Auction " + auction.getAuctionId() + ": Rapid bidding by bidder: " + bidderId + " at amount " + amount;
-                System.out.println("WARNING: Unusual bidding activity detected (" + message + ").");
                 addAlert(state, message);
+                triggeredAlerts.add(message);
             }
             if (priceSpike) {
                 String message = "Auction " + auction.getAuctionId() + ": Price spike at amount " + amount;
-                System.out.println("WARNING: Unusual bidding activity detected (" + message + ").");
                 addAlert(state, message);
+                triggeredAlerts.add(message);
             }
         }
+
+        return new BidPlacementResult(true, "Bid placed successfully.", Collections.unmodifiableList(triggeredAlerts));
     }
 
     public Bid getHighestBid(String auctionId) {
@@ -163,8 +188,14 @@ public class AuctionEngine {
         requireAuctionState(auctionId).manuallyClosed = true;
     }
 
+    public List<Bid> getSortedBids(String auctionId) {
+        return requireAuctionState(auctionId).redBlackTree.inorderTraversal();
+    }
+
     public void printSortedBids(String auctionId) {
-        requireAuctionState(auctionId).redBlackTree.inorderTraversal();
+        for (Bid bid : getSortedBids(auctionId)) {
+            System.out.println(bid);
+        }
     }
 
     public int getHistoryVersionCount(String auctionId) {
@@ -216,5 +247,9 @@ public class AuctionEngine {
             state.recentAlerts.remove(0);
         }
         state.recentAlerts.add(message);
+    }
+
+    private BidPlacementResult rejected(String message) {
+        return new BidPlacementResult(false, message, Collections.emptyList());
     }
 }

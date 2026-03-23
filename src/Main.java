@@ -94,7 +94,11 @@ public class Main {
             return;
         }
 
-        engine.placeBid(auctionId, bidderId, amount);
+        AuctionEngine.BidPlacementResult result = engine.placeBid(auctionId, bidderId, amount);
+        System.out.println(result.getMessage());
+        for (String alert : result.getAlerts()) {
+            System.out.println("ALERT: " + alert);
+        }
         pause(scanner);
     }
 
@@ -195,7 +199,14 @@ public class Main {
         }
 
         System.out.println("\nSorted bids (low to high):");
-        engine.printSortedBids(auctionId);
+        List<Bid> bids = engine.getSortedBids(auctionId);
+        if (bids.isEmpty()) {
+            System.out.println("No bids yet.");
+        } else {
+            for (Bid bid : bids) {
+                System.out.println(bid);
+            }
+        }
         pause(scanner);
     }
 
