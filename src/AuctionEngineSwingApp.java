@@ -31,14 +31,18 @@ import java.awt.Font;
 import java.awt.GridLayout;
 import java.text.NumberFormat;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 
 public class AuctionEngineSwingApp {
 
     private static final DateTimeFormatter LIST_TIME_FORMATTER =
             DateTimeFormatter.ofPattern("MMM dd, HH:mm").withZone(ZoneId.systemDefault());
+    private static final DateTimeFormatter INPUT_TIME_FORMATTER =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
     private final AuctionEngine engine;
     private final JLabel highestLabel;
@@ -651,17 +655,18 @@ public class AuctionEngineSwingApp {
     private void createAuction() {
         JTextField auctionIdField = new JTextField();
         JTextField itemNameField = new JTextField();
-        JTextField startField = new JTextField(String.valueOf(System.currentTimeMillis()));
-        JTextField endField = new JTextField(String.valueOf(System.currentTimeMillis() + 300000));
+        LocalDateTime now = LocalDateTime.now();
+        JTextField startField = new JTextField(INPUT_TIME_FORMATTER.format(now));
+        JTextField endField = new JTextField(INPUT_TIME_FORMATTER.format(now.plusMinutes(5)));
 
         JPanel panel = new JPanel(new GridLayout(0, 2, 8, 8));
         panel.add(new JLabel("Auction ID"));
         panel.add(auctionIdField);
         panel.add(new JLabel("Item Name"));
         panel.add(itemNameField);
-        panel.add(new JLabel("Start Time (epoch millis)"));
+        panel.add(new JLabel("Start Time (yyyy-MM-dd HH:mm)"));
         panel.add(startField);
-        panel.add(new JLabel("End Time (epoch millis)"));
+        panel.add(new JLabel("End Time (yyyy-MM-dd HH:mm)"));
         panel.add(endField);
 
         int result = JOptionPane.showConfirmDialog(
@@ -679,10 +684,10 @@ public class AuctionEngineSwingApp {
         long start;
         long end;
         try {
-            start = Long.parseLong(startField.getText().trim());
-            end = Long.parseLong(endField.getText().trim());
-        } catch (NumberFormatException ex) {
-            showError("Start and end time must be valid epoch milliseconds.");
+            start = parseInputTime(startField.getText().trim());
+            end = parseInputTime(endField.getText().trim());
+        } catch (DateTimeParseException ex) {
+            showError("Start and end time must use yyyy-MM-dd HH:mm format.");
             return;
         }
 
@@ -744,6 +749,13 @@ public class AuctionEngineSwingApp {
 
     private String formatMillis(long timeMillis) {
         return LIST_TIME_FORMATTER.format(Instant.ofEpochMilli(timeMillis));
+    }
+
+    private long parseInputTime(String value) {
+        return LocalDateTime.parse(value, INPUT_TIME_FORMATTER)
+                .atZone(ZoneId.systemDefault())
+                .toInstant()
+                .toEpochMilli();
     }
 
     private String parseAuctionId(String listValue) {
